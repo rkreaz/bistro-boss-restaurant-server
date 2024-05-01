@@ -1,19 +1,17 @@
 const express = require('express');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
+const stripe = require("stripe")('sk_test_51PAdffP3nWiG6IJjQGXZqDjR64a9keX1Q296jyYJe097Cp7ejc7luPmPjpatEnF1mITDWv7GltnrXjYgW6kVLAq4000NChRIAb');
+
 const app = express();
 const cors = require('cors');
-require('dotenv').config()
+require('dotenv').config();
 const port = process.env.PORT || 5000;
 
 
 // middleware 
 app.use(cors());
 app.use(express.json());
-
-// bistroBossUser
-// 9pLblJzx0v96Om1O
-
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.j9zzvlf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -33,10 +31,11 @@ async function run() {
     await client.connect();
 
 
-    const menuCollection = client.db("bistroDb").collection("menu");
-    const reviewsCollection = client.db("bistroDb").collection("reviews");
-    const cardCollection = client.db("bistroDb").collection("cards");
-    const userCollection = client.db("bistroDb").collection("users");
+    const menuCollection = client.db("bistroDb").collection("menu");//
+    const reviewsCollection = client.db("bistroDb").collection("reviews");//
+    const cardCollection = client.db("bistroDb").collection("cards");//
+    const userCollection = client.db("bistroDb").collection("users");//
+    const paymentCollection = client.db("bistroDb").collection("payments");
 
 
     // jwt related API 
@@ -156,7 +155,7 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await menuCollection.findOne(query);
-      console.log("result", result);
+      // console.log("result", result);
       res.send(result);
     })
 
@@ -198,6 +197,46 @@ async function run() {
       res.send(result);
     })
 
+    // Payment intent
+
+    app.post('/create-checkout-intent', async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      // console.log("stripe", stripe); return;
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: ['card']
+      })
+      // console.log('paymentIntent', paymentIntent); 
+
+      res.send({
+        clientSecret: paymentIntent.client_secret
+      })
+    })
+
+    app.post('/payments', async (req, res) => {
+      const payment = req.body;
+      const paymentResult = await paymentCollection.insertOne(payment);
+      console.log('payment Info', payment);
+      const query = {
+        _id: {
+          $in: payment.cardIds.map(id => new ObjectId(id))
+        }
+      };
+
+      const deleteResult = await cardCollection.deleteMany(query);
+      res.send({ paymentResult, deleteResult });
+    })
+
+    app.post('/payments/:email', verifyToken, async (req, res) => {
+      const query = { email: req.params.email };
+      if (req.params.email !== req.decoded.email) {
+        return res.status(403).send({ message: 'forbidden access' });
+      }
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result);
+    })
 
 
     // Send a ping to confirm a successful connection
