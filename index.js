@@ -267,7 +267,55 @@ async function run() {
         orders,
         revenue
       })
+    });
+
+    // using aggregate pipeline
+    app.get('/order-stats',  verifyToken, verifyAdmin, async (req, res) => {
+      const result = await paymentCollection.aggregate([
+        {
+          $addFields: {
+            menuItemObjectIds: {
+              $map: {
+                input: '$menuItemIds',
+                as: 'itemId',
+                in: { $toObjectId: '$$itemId' }
+              }
+            }
+          }
+        },
+        {
+          $lookup: {
+            from: 'menu',
+            localField: 'menuItemObjectIds',
+            foreignField: '_id',
+            as: 'menuItems'
+          }
+        },
+
+        {
+          $unwind: '$menuItems'
+        },
+        {
+          $group: {
+            _id: '$menuItems.category',
+            totalQuantity: { $sum: 1 },
+            totalRevenue: { $sum: '$menuItems.price' }
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            category: '$_id',
+            totalQuantity: '$totalQuantity',
+            totalRevenue: '$totalRevenue'
+          }
+        }
+
+      ]).toArray()
+
+      res.send(result);
     })
+
 
 
     // Send a ping to confirm a successful connection
